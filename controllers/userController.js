@@ -2,8 +2,18 @@ const User = require("../models/userModel");
 const AppError = require("../utils/AppError");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const userSchema = require("../validations/userSchema");
+const loginSchema = require("../validations/loginSchema");
+const updateSchema = require("../validations/updateSchema");
+
 exports.registerUser = async (req, res, next) => {
   try {
+    // Validate request body
+    const { error } = userSchema.validate(req.body);
+
+    if (error) {
+      return next(error);
+    }
     const { name, email, password, role } = req.body;
 
     // Check if user with email already exists
@@ -72,6 +82,11 @@ exports.deleteUser = async (req, res, next) => {
 
 exports.updateUser = async (req, res, next) => {
   try {
+    // Validate request body
+    const { error } = updateSchema.validate(req.body);
+    if (error) {
+      return next(error);
+    }
     const user = await User.findByPk(req.params.id);
 
     if (!user) {
@@ -92,12 +107,13 @@ exports.updateUser = async (req, res, next) => {
 
 exports.loginUser = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { error } = loginSchema.validate(req.body);
+    console.log(error);
 
-    // Check if email and password are provided
-    if (!email || !password) {
-      return next(new AppError("Please provide email and password", 400));
+    if (error) {
+      return next(error);
     }
+    const { email, password } = req.body;
 
     // Find user by email
     const user = await User.findOne({ where: { email } });
