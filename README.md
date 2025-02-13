@@ -42,6 +42,14 @@ Create a `.env` file in the root directory and add the following variables:
 ```
 PORT=3000
 # Add other environment variables
+DB_HOST=
+DB_PORT=
+DB_USER=
+DB_PASS=
+DB_NAME=
+REDIS_HOST=
+JWT_SECRET=
+JWT_EXPIRES_IN=
 ```
 
 ## API Documentation
