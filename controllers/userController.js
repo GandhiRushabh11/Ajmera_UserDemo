@@ -5,6 +5,10 @@ const jwt = require("jsonwebtoken");
 const userSchema = require("../validations/userSchema");
 const loginSchema = require("../validations/loginSchema");
 const updateSchema = require("../validations/updateSchema");
+// Cache keys
+const ALL_USERS_CACHE_KEY = "all_users";
+const USER_CACHE_PREFIX = "user:";
+const CACHE_TTL = 180;
 
 exports.registerUser = async (req, res, next) => {
   try {
@@ -30,6 +34,14 @@ exports.registerUser = async (req, res, next) => {
       password: hashedPassword,
       role,
     });
+
+    // Cache the new user
+    // Clear all user-related caches
+    const keys = await client.keys(`${USER_CACHE_PREFIX}*`);
+    if (keys.length > 0) {
+      await client.del(keys);
+    }
+    await client.del(ALL_USERS_CACHE_KEY);
     // Use sendResponseToken instead of direct response
     sendResponseToken(user, 201, res);
   } catch (error) {
@@ -39,7 +51,17 @@ exports.registerUser = async (req, res, next) => {
 
 exports.getAllUsers = async (req, res, next) => {
   try {
+    const cachedUsers = await client.get(ALL_USERS_CACHE_KEY);
+    if (cachedUsers) {
+      return res.status(200).json({
+        success: true,
+        data: JSON.parse(cachedUsers),
+        source: "cache",
+      });
+    }
+
     const users = await User.findAll({ attributes: { exclude: ["password"] } });
+    await client.setEx(ALL_USERS_CACHE_KEY, CACHE_TTL, JSON.stringify(users));
     res.status(200).json({ success: true, data: users });
   } catch (error) {
     next(error);
@@ -48,6 +70,16 @@ exports.getAllUsers = async (req, res, next) => {
 
 exports.getUser = async (req, res, next) => {
   try {
+    // Check cache first
+    const cachedUser = await client.get(`${USER_CACHE_PREFIX}${userId}`);
+    if (cachedUser) {
+      return res.status(200).json({
+        success: true,
+        data: JSON.parse(cachedUser),
+        source: "cache",
+      });
+    }
+
     const user = await User.findByPk(req.params.id, {
       attributes: { exclude: ["password"] },
     });
@@ -55,7 +87,11 @@ exports.getUser = async (req, res, next) => {
     if (!user) {
       return next(new AppError("No user found with that ID", 404));
     }
-
+    await client.setEx(
+      `${USER_CACHE_PREFIX}${req.params.id}`,
+      CACHE_TTL,
+      JSON.stringify(user)
+    );
     res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);
@@ -71,6 +107,9 @@ exports.deleteUser = async (req, res, next) => {
     }
 
     await user.destroy();
+    // Invalidate caches
+    await client.del(`${USER_CACHE_PREFIX}${req.params.id}`);
+    await client.del(ALL_USERS_CACHE_KEY);
     res.status(204).json({
       success: true,
       data: null,
@@ -95,6 +134,10 @@ exports.updateUser = async (req, res, next) => {
 
     // Update user with request body data
     await user.update(req.body);
+
+    // Invalidate caches
+    await client.del(`${USER_CACHE_PREFIX}${req.params.id}`);
+    await client.del(ALL_USERS_CACHE_KEY);
 
     res.status(200).json({
       success: true,
